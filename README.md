@@ -1,5 +1,5 @@
 
-# 📚 Node-RED EPUB to PDF Workflow for reMarkable
+# 📚 Node-RED EPUB to PDF Workflow for reMarkable & Kavita
 
 This repository contains a Node-RED flow designed to automate the process of delivering EPUB and PDF files to your reMarkable tablet via email.
 
@@ -22,8 +22,19 @@ You’ll need the following services running locally (Docker recommended):
 |--------|--------|------|-------|
 | Node-RED | https://github.com/node-red/node-red | `1880` | Core automation |
 | epub_to_remarkable | https://github.com/suntorytimed/epub_to_remarkable | `5004` | Converts EPUB to PDF |
-| Aviary | https://github.com/rmitchellscott/aviary | `8011` | Pushes PDF to reMarkable |
+| Aviary | https://github.com/rmitchellscott/aviary | `8011` | Pushes PDF to reMarkable *(API-generated token used if pairing fails)* |
 | FileBrowser | https://github.com/filebrowser/filebrowser | `8087` | Stores and deletes files |
+
+> ⚠️ FileBrowser must be run with `FB_NOAUTH=true` in this example. If you're exposing this to the internet, configure authentication and update your flow.
+
+---
+
+## ⚠ Notes
+
+- I was unable to get Aviary to pair with my reMarkable via the standard method, so I used https://github.com/ddvk/rmapi to generate the rmapi.conf.
+- Some of the code in this flow (e.g., function nodes) was **generated or assisted by AI tools**. Please use caution and review logic before deploying in production environments.
+
+---
 
 ## 📥 Email Integration
 
@@ -35,7 +46,7 @@ The flow is triggered by incoming emails via IMAP. Example setup:
 
 ## 📂 Files in This Repo
 
-- `remarkable_epub_flow_sanitised.json`  
+- `remarkable_epub_flow.json`  
   The sanitised Node-RED flow file ready to import into your local Node-RED instance.
 
 ## 🚀 Getting Started
@@ -45,10 +56,6 @@ The flow is triggered by incoming emails via IMAP. Example setup:
 3. Import the flow into Node-RED
 4. Update folder names, server IPs, and authentication as needed
 5. Send an email with a book attached and one of the two subject lines to trigger the flow
-
-## 🛡 Security Note
-
-FileBrowser is configured with `FB_NOAUTH=true` in this example. If you're exposing this to the internet, please configure authentication and secure access.
 
 ## 🙌 Credits
 
