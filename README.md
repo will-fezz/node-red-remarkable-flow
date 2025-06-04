@@ -9,8 +9,7 @@ This repository contains a Node-RED flow designed to automate the process of del
 - Converts EPUB files to PDF using `epub_to_remarkable`
 - Routes files based on subject line:
   - `Send to reMarkable` → pushed to reMarkable via Aviary
-  - `Send to eReader` → saved to Kavita directory
-- Uses FileBrowser to store temporary files
+  - `Send to eReader` → converted then pushed to reMarkable via Aviary
 - Automatically deletes temporary files after processing
 - Fully self-hosted using Docker
 
