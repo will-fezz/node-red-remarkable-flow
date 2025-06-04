@@ -1,0 +1,574 @@
+[
+  {
+    "id": "4f13ccaa16a6052b",
+    "type": "e-mail in",
+    "z": "b2cc51914bbf269f",
+    "name": "Email Listener",
+    "protocol": "IMAP",
+    "server": "imap.example.com",
+    "useSSL": true,
+    "autotls": "never",
+    "port": "993",
+    "authtype": "BASIC",
+    "saslformat": true,
+    "token": "your_oauth_token_here",
+    "box": "YourFolder",
+    "disposition": "Read",
+    "criteria": "UNSEEN",
+    "repeat": "60",
+    "fetch": "auto",
+    "inputs": 0,
+    "x": 230,
+    "y": 540,
+    "wires": [
+      [
+        "741605b64018d72e"
+      ]
+    ]
+  },
+  {
+    "id": "e72ca7e95c6ec895",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Prepare EPUB Conversion",
+    "func": "// Prepare multipart form data for epub_to_remarkable API\nconst boundary = '----FormBoundary' + Math.random().toString(16).substr(2);\n\n// Build multipart form data\nlet body = [];\n\n// Add EPUB file\nbody.push(Buffer.from(`--${boundary}\\r\\n`));\nbody.push(Buffer.from(`Content-Disposition: form-data; name=\"epub_file\"; filename=\"${msg.originalFilename}\"\\r\\n`));\nbody.push(Buffer.from(`Content-Type: application/epub+zip\\r\\n\\r\\n`));\nbody.push(msg.payload);\nbody.push(Buffer.from(`\\r\\n`));\n\n// Add device profile\nbody.push(Buffer.from(`--${boundary}\\r\\n`));\nbody.push(Buffer.from(`Content-Disposition: form-data; name=\"device_profile\"\\r\\n\\r\\n`));\nbody.push(Buffer.from(`reMarkable\\r\\n`));\nbody.push(Buffer.from(`--${boundary}--\\r\\n`));\n\n// Combine all parts\nmsg.payload = Buffer.concat(body);\nmsg.headers = {\n    'Content-Type': `multipart/form-data; boundary=${boundary}`\n};\n\n// Store filename for later\nmsg.convertedFilename = msg.originalFilename.replace('.epub', '.pdf');\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1220,
+    "y": 160,
+    "wires": [
+      [
+        "d1621c21f91ada78"
+      ]
+    ]
+  },
+  {
+    "id": "d1621c21f91ada78",
+    "type": "http request",
+    "z": "b2cc51914bbf269f",
+    "name": "Convert EPUB to PDF",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "http://localhost:PORT/api/v1/convert",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 1460,
+    "y": 160,
+    "wires": [
+      [
+        "72162e9d498df511"
+      ]
+    ]
+  },
+  {
+    "id": "72162e9d498df511",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Process Conversion Response",
+    "func": "// Check if conversion started successfully\nif (msg.statusCode !== 200 && msg.statusCode !== 202) {\n    node.error(\"Failed to start conversion. Status: \" + msg.statusCode);\n    return null;\n}\n\nif (!msg.payload || !msg.payload.job_id) {\n    node.error(\"No job ID in response\");\n    return null;\n}\n\nmsg.jobId = msg.payload.job_id;\nmsg.statusUrl = msg.payload.status_url;\n\nnode.status({fill:\"blue\",shape:\"ring\",text:\"Job ID: \" + msg.jobId});\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1710,
+    "y": 160,
+    "wires": [
+      [
+        "81cd81b527572f5d"
+      ]
+    ]
+  },
+  {
+    "id": "81cd81b527572f5d",
+    "type": "delay",
+    "z": "b2cc51914bbf269f",
+    "name": "Wait 2s",
+    "pauseType": "delay",
+    "timeout": "2",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "outputs": 1,
+    "x": 1960,
+    "y": 80,
+    "wires": [
+      [
+        "b5e37a240ec0e0de"
+      ]
+    ]
+  },
+  {
+    "id": "b5e37a240ec0e0de",
+    "type": "http request",
+    "z": "b2cc51914bbf269f",
+    "name": "Check Conversion Status",
+    "method": "GET",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "{{{statusUrl}}}",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "x": 2190,
+    "y": 80,
+    "wires": [
+      [
+        "71725c7e5f7a68f7"
+      ]
+    ]
+  },
+  {
+    "id": "71725c7e5f7a68f7",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Check Status & Loop",
+    "func": "// Check conversion status\nif (msg.statusCode !== 200) {\n    node.error(\"Failed to check status: \" + msg.statusCode);\n    return null;\n}\n\nconst status = msg.payload.status;\nconst progress = msg.payload.progress || 0;\n\nnode.status({fill:\"blue\",shape:\"ring\",text:`${status} (${progress}%)`});\n\nif (status === \"completed\") {\n    msg.downloadUrl = msg.payload.download_url;\n    return [msg, null];\n    \n} else if (status === \"failed\") {\n    node.error(\"Conversion failed: \" + msg.payload.message);\n    return null;\n} else {\n    // Still processing, check again\n    return [null, msg];\n}",
+    "outputs": 2,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 2440,
+    "y": 80,
+    "wires": [
+      [
+        "8c8b5423b96a0c0e"
+      ],
+      [
+        "81cd81b527572f5d"
+      ]
+    ]
+  },
+  {
+    "id": "3bc08419b4d8e937",
+    "type": "http request",
+    "z": "b2cc51914bbf269f",
+    "name": "Download Converted PDF",
+    "method": "GET",
+    "ret": "bin",
+    "paytoqs": "ignore",
+    "url": "{{{downloadUrl}}}",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 2870,
+    "y": 140,
+    "wires": [
+      [
+        "1a0c7b9a0d040403"
+      ]
+    ]
+  },
+  {
+    "id": "e62876f0395692ce",
+    "type": "file",
+    "z": "b2cc51914bbf269f",
+    "name": "Save PDF to Books",
+    "filename": "filename",
+    "filenameType": "msg",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "none",
+    "x": 3290,
+    "y": 140,
+    "wires": [
+      [
+        "d02936944fefcf32"
+      ]
+    ]
+  },
+  {
+    "id": "d02936944fefcf32",
+    "type": "delay",
+    "z": "b2cc51914bbf269f",
+    "name": "Wait 1s",
+    "pauseType": "delay",
+    "timeout": "1",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "allowrate": false,
+    "outputs": 1,
+    "x": 3480,
+    "y": 140,
+    "wires": [
+      [
+        "967060a0e4f86c88"
+      ]
+    ]
+  },
+  {
+    "id": "967060a0e4f86c88",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Get FileBrowser Token",
+    "func": "// In no-auth mode, we still need to get a token for API access\n// The default user in no-auth mode is usually admin/admin\n\nconst baseUrl = 'http://localhost:PORT';\n\n// Store for later use\nmsg.filebrowser = {\n    baseUrl: baseUrl,\n    filePath: 'Books/' + msg.convertedFilename\n};\n\n// In no-auth mode, try the default credentials\nmsg.payload = {\n    username: 'admin',\n    password: 'admin'\n};\n\nmsg.headers = { 'Content-Type': 'application/json' };\nmsg.url = baseUrl + '/api/login';\n\nnode.log('Getting FileBrowser token for API access');\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 3680,
+    "y": 140,
+    "wires": [
+      [
+        "4de608e51d943ca2"
+      ]
+    ]
+  },
+  {
+    "id": "4de608e51d943ca2",
+    "type": "http request",
+    "z": "b2cc51914bbf269f",
+    "name": "FileBrowser Login",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "x": 3910,
+    "y": 140,
+    "wires": [
+      [
+        "50a2bbd6e0714147"
+      ]
+    ]
+  },
+  {
+    "id": "50a2bbd6e0714147",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Process Token",
+    "func": "// Get the auth token\nif (msg.statusCode !== 200) {\n    node.error(`FileBrowser login failed: ${msg.statusCode}`);\n    return null;\n}\n\nmsg.authToken = msg.payload;\n\n// Create the authenticated download URL\nconst downloadUrl = `${msg.filebrowser.baseUrl}/api/raw/${msg.filebrowser.filePath}?auth=${msg.authToken}`;\n\n// Prepare Aviary request\nmsg.payload = {\n    Body: downloadUrl,\n    prefix: \"\",\n    compress: \"false\",\n    manage: \"false\",\n    rm_dir: `${msg.rmlocation}`\n};\n\nmsg.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };\n\nnode.log(`Sending to Aviary: ${downloadUrl}`);\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 4120,
+    "y": 140,
+    "wires": [
+      [
+        "77c2688be2d3e2df"
+      ]
+    ]
+  },
+  {
+    "id": "77c2688be2d3e2df",
+    "type": "http request",
+    "z": "b2cc51914bbf269f",
+    "name": "Send to Aviary",
+    "method": "POST",
+    "ret": "txt",
+    "paytoqs": "ignore",
+    "url": "http://localhost:PORT/api/webhook",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 4320,
+    "y": 140,
+    "wires": [
+      [
+        "bae7a510692b6336"
+      ]
+    ]
+  },
+  {
+    "id": "bae7a510692b6336",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Check Result",
+    "func": "// Check if upload was successful\nif (msg.statusCode === 200 || msg.statusCode === 202) {\n    node.status({fill:\"green\",shape:\"dot\",text:\"Success!\"});\n    msg.success = true;\n    node.log(\"PDF sent to reMarkable successfully\");\n} else {\n    node.status({fill:\"red\",shape:\"ring\",text:\"Failed\"});\n    msg.success = false;\n    node.error(\"Failed to send to reMarkable: \" + msg.statusCode);\n}\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 4520,
+    "y": 140,
+    "wires": [
+      [
+        "delete-files-func"
+      ]
+    ]
+  },
+  {
+    "id": "e4b482ad0dfde2c8",
+    "type": "debug",
+    "z": "b2cc51914bbf269f",
+    "name": "Complete",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 5620,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "8c8b5423b96a0c0e",
+    "type": "delay",
+    "z": "b2cc51914bbf269f",
+    "name": "Wait 5s",
+    "pauseType": "delay",
+    "timeout": "5",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "randomUnits": "seconds",
+    "drop": false,
+    "allowrate": false,
+    "outputs": 1,
+    "x": 2660,
+    "y": 140,
+    "wires": [
+      [
+        "3bc08419b4d8e937"
+      ]
+    ]
+  },
+  {
+    "id": "1a0c7b9a0d040403",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Validate PDF",
+    "func": "// Validate PDF data\nif (!msg.payload || msg.payload.length === 0) {\n    node.error(\"No PDF data received\");\n    return null;\n}\n\n// Check PDF header\nconst pdfHeader = msg.payload.slice(0, 4).toString();\nif (pdfHeader !== '%PDF') {\n    node.error(\"Invalid PDF - missing header\");\n    return null;\n}\n\nmsg.filename = \"/Books/\" + msg.convertedFilename;\nnode.status({fill:\"green\",shape:\"dot\",text:`PDF: ${msg.payload.length} bytes`});\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 3090,
+    "y": 140,
+    "wires": [
+      [
+        "e62876f0395692ce"
+      ]
+    ]
+  },
+  {
+    "id": "f0eceb64b68c16e8",
+    "type": "e-mail in",
+    "z": "b2cc51914bbf269f",
+    "name": "Email Listener",
+    "protocol": "IMAP",
+    "server": "imap.example.com",
+    "useSSL": true,
+    "autotls": "never",
+    "port": "993",
+    "authtype": "BASIC",
+    "saslformat": true,
+    "token": "your_oauth_token_here",
+    "box": "YourFolder",
+    "disposition": "Read",
+    "criteria": "UNSEEN",
+    "repeat": "60",
+    "fetch": "auto",
+    "inputs": 0,
+    "x": 230,
+    "y": 700,
+    "wires": [
+      [
+        "741605b64018d72e"
+      ]
+    ]
+  },
+  {
+    "id": "741605b64018d72e",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Filter & Extract Attachments",
+    "func": "// Combined function: Filter emails AND extract attachments\n\n// Handle single email or array of emails\nlet emails = Array.isArray(msg.payload) ? msg.payload : [msg.payload];\n\n// Filter emails by subject\nlet filtered = emails.filter(email => {\n    let subject = email.subject || (email.headers && email.headers.subject) || \"\";\n    return subject === \"Send to eReader\" || subject === \"Send to reMarkable\";\n});\n\nif (filtered.length === 0) {\n    return null;\n}\n\n// Process first filtered email\nconst email = filtered[0];\nconst subject = email.subject || (email.headers && email.headers.subject) || \"\";\n\n// Check for attachments\nif (!email.attachments || email.attachments.length === 0) {\n    node.warn(\"No attachments found\");\n    return null;\n}\n\nconst attachment = email.attachments[0];\n\n// Convert attachment content to Buffers\nlet fileBuffer;\nif (Array.isArray(attachment.content)) {\n    fileBuffer = Buffer.from(attachment.content);\n} else if (attachment.content instanceof Buffer) {\n    fileBuffer = attachment.content;\n} else {\n    node.error(\"Unknown attachment content format\");\n    return null;\n}\n\n// Clean filename\nconst filename = attachment.filename\n    .replace(/[,;:'\"<>|?*]/g, '')\n    .replace(/\\s+/g, '_')\n    .replace(/_+/g, '_')\n    .trim();\n\n// Determine file path based on email subject\nlet basePath;\nif (subject === \"Send to eReader\") {\n    basePath = \"/Books/\";\n} else if (subject === \"Send to reMarkable\") {\n    basePath = \"/Documents/\";\n} else {\n    basePath = \"/Files/\"; // fallback\n}\n\n// Build response\nmsg.payload = fileBuffer;\nmsg.filename = basePath + filename;\nmsg.originalFilename = filename;\nmsg.emailSource = subject;\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 480,
+    "y": 620,
+    "wires": [
+      [
+        "7e65f7d44fb0c382"
+      ]
+    ]
+  },
+  {
+    "id": "7e65f7d44fb0c382",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Sort by File Type",
+    "func": "// Get filename for type detection\nlet filename = msg.originalFilename || msg.filename || \"\";\nlet filenameLower = filename.toLowerCase();\n\n// Sort files by extension\nif (filenameLower.endsWith('.epub')) {\n    msg.fileType = \"epub\";\n    msg.rmlocation = \"Books\";\n    return [msg, null, null];\n} \nelse if (filenameLower.endsWith('.pdf')) {\n    msg.fileType = \"pdf\";\n    msg.rmlocation = \"\";\n    return [null, msg, null];\n} \nelse {\n    msg.fileType = \"unsupported\";\n    msg.error = \"File is neither EPUB nor PDF\";\n    return [null, null, msg];\n}",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 780,
+    "y": 620,
+    "wires": [
+      [
+        "e72ca7e95c6ec895",
+        "f8d34e7ea7cc62b2"
+      ],
+      [
+        "1a0c7b9a0d040403"
+      ],
+      []
+    ]
+  },
+  {
+    "id": "f8d34e7ea7cc62b2",
+    "type": "file",
+    "z": "b2cc51914bbf269f",
+    "name": "Save Original EPUB",
+    "filename": "filename",
+    "filenameType": "msg",
+    "appendNewline": false,
+    "createDir": true,
+    "overwriteFile": "true",
+    "encoding": "none",
+    "x": 1200,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "delete-files-func",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Prepare File Deletion",
+    "func": "// Delete files from FileBrowser - First EPUB, then PDF\nconst baseUrl = (msg.filebrowser && msg.filebrowser.baseUrl) ? msg.filebrowser.baseUrl : 'http://localhost:PORT';\nconst authToken = msg.authToken;\n\n// Determine which file to delete based on msg.deleteStep\nif (!msg.deleteStep || msg.deleteStep === 1) {\n    // First pass - delete EPUB\n    msg.url = `${baseUrl}/api/resources/Books/${msg.originalFilename}`;\n    msg.headers = { 'X-Auth': authToken };\n    msg.method = 'DELETE';\n    msg.deleteStep = 2;\n    node.status({fill:\"yellow\",shape:\"ring\",text:\"Deleting EPUB\"});\n} else {\n    // Second pass - delete PDF\n    msg.url = `${baseUrl}/api/resources/Books/${msg.convertedFilename}`;\n    msg.headers = { 'X-Auth': authToken };\n    msg.method = 'DELETE';\n    msg.deleteStep = 'complete';\n    node.status({fill:\"yellow\",shape:\"ring\",text:\"Deleting PDF\"});\n}\n\nreturn msg;",
+    "outputs": 1,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 4760,
+    "y": 140,
+    "wires": [
+      [
+        "delete-request"
+      ]
+    ]
+  },
+  {
+    "id": "delete-request",
+    "type": "http request",
+    "z": "b2cc51914bbf269f",
+    "name": "Delete File",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "x": 4970,
+    "y": 140,
+    "wires": [
+      [
+        "check-delete-status"
+      ]
+    ]
+  },
+  {
+    "id": "check-delete-status",
+    "type": "switch",
+    "z": "b2cc51914bbf269f",
+    "name": "More to Delete?",
+    "property": "deleteStep",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "2",
+        "vt": "num"
+      },
+      {
+        "t": "eq",
+        "v": "complete",
+        "vt": "str"
+      }
+    ],
+    "checkall": "true",
+    "repair": false,
+    "outputs": 2,
+    "x": 5160,
+    "y": 140,
+    "wires": [
+      [
+        "delete-files-func"
+      ],
+      [
+        "delete-complete"
+      ]
+    ]
+  },
+  {
+    "id": "delete-complete",
+    "type": "function",
+    "z": "b2cc51914bbf269f",
+    "name": "Deletion Complete",
+    "func": "node.status({fill:\"green\",shape:\"dot\",text:\"Files deleted\"});\nnode.log(`Deleted: ${msg.originalFilename} and ${msg.convertedFilename}`);\nreturn msg;",
+    "outputs": 1,
+    "x": 5390,
+    "y": 160,
+    "wires": [
+      [
+        "e4b482ad0dfde2c8"
+      ]
+    ]
+  }
+]
