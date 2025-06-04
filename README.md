@@ -1,5 +1,5 @@
 
-# 📚 Node-RED EPUB to PDF Workflow for reMarkable & Kavita
+# 📚 Node-RED EPUB to PDF Workflow for reMarkable
 
 This repository contains a Node-RED flow designed to automate the process of delivering EPUB and PDF files to your reMarkable tablet via email.
 
